@@ -153,7 +153,7 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
     GB_CLEAR_MATRIX_HEADER (T, &T_header) ;
     GB_OK (GB_kroner (T, T_is_csc, op, flipij,
         A_transpose ? AT : A, A_is_pattern,
-        B_transpose ? BT : B, B_is_pattern, Werk)) ;
+        B_transpose ? BT : B, B_is_pattern, M, Mask_comp, Mask_struct, Werk)) ;
 
     GB_FREE_WORKSPACE ;
     ASSERT_MATRIX_OK (T, "T = kron(A,B)", GB0) ;
