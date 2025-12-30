@@ -113,6 +113,7 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
     if (M != NULL && !Mask_comp && op->binop_function != NULL) {
 
         #include "../matrix/GB_matrix.h"
+        #include "../memory/GB_memory.h"
         GB_Matrix_new(&MT, op->ztype, GB_NROWS(C), GB_NCOLS(C));
 
             // leave nonzero entries only with needed A and B values present
@@ -168,22 +169,25 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
 
             GrB_Index nvals_upd = 0;
 
-            #include "GraphBLAS.h"
+            //#include "GraphBLAS.h"
+            #include "../element/GrB_Matrix_extractElement.c"
+            #include "../print/GB_check.h"
+
             printf("Type size A: %zu\n", A->type->size);
             //int32_t* aaa = calloc(1, A->type->size);
             GrB_Scalar aaa;
-            GrB_Scalar_new(&aaa, A->type);
+            GB_Matrix_new((GrB_Matrix *)(&aaa), A->type, 1, 1);
             //memset(aaa, 0, A->type->size);
-            printf("%d\n", GrB_Matrix_extractElement(aaa, A, 0, 0));
+            printf("%d\n", GrB_Matrix_extractElement_Scalar(aaa, A, 1, 2));
             //memcpy(aaa, ((GB_void*)A->x), 4);
             //int32_t aaa_val;
             //memcpy(&aaa_val, aaa, A->type->size);
             //printf("%d\n", aaa_val);
-            GB_void rrr [1];
+            //GB_void rrr [1];
             printf("%s\n", "one byte only");
-            printf("%d\n", GrB_Matrix_extractElement(rrr, A, 0, 0));
+            //printf("%d\n", GrB_Matrix_extractElement(rrr, A, 0, 0));
             GxB_Scalar_fprint(aaa, "value", GxB_COMPLETE, stdout);
-            GrB_Scalar_free(&aaa);
+            GB_Matrix_free((GrB_Matrix *)(&aaa));
 
             #pragma omp parallel for reduction(+:nvals_upd)
             for (GrB_Index mval = 0; mval < nvals; mval++) {
@@ -193,12 +197,11 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
 
                 size_t thread_allocated = 0;
                 GrB_Info info_elem = 0;
-                GB_void extractCheckA[A->type->size];
                 GrB_Scalar a_elem;
-                GrB_Scalar_new(&a_elem, op->xtype);
+                GB_Matrix_new((GrB_Matrix *)(&a_elem), op->xtype, 1, 1);
 
                 GrB_Scalar b_elem;
-                GrB_Scalar_new(&b_elem, op->ytype);
+                GB_Matrix_new((GrB_Matrix *)(&b_elem), op->ytype, 1, 1);
 
                 GrB_Index arow = 0;
                 GrB_Index acol = 0;
@@ -211,13 +214,14 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
                     acol = J_ind[mval] / bcols;
                 }
 
-                info_elem = GrB_Matrix_extractElement(extractCheckA, A, arow, acol);
+                info_elem = GxB_Matrix_isStoredElement(A, arow, acol);
                 if (info_elem == GrB_NO_VALUE) {
-                    GrB_Scalar_free(&a_elem);
-                    GrB_Scalar_free(&b_elem);
+                    GB_Matrix_free(&a_elem);
+                    GB_Matrix_free(&b_elem);
                     continue;
                 }
-                GrB_Matrix_extractElement(a_elem, A, arow, acol);
+
+                GrB_Matrix_extractElement_Scalar(a_elem, A, arow, acol);
 
                 GrB_Index browindex = 0;
                 GrB_Index bcolindex = 0;
@@ -231,21 +235,20 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
                     bcolindex = J_ind[mval] % bcols;
                 }
 
-                GB_void extractCheckB[B->type->size];
-                info_elem = GrB_Matrix_extractElement(extractCheckB, B, browindex, bcolindex);
+                info_elem = GxB_Matrix_isStoredElement(B, browindex, bcolindex);
                 if (info_elem == GrB_NO_VALUE) {
-                    GrB_Scalar_free(&a_elem);
-                    GrB_Scalar_free(&b_elem);
+                    GB_Matrix_free(&a_elem);
+                    GB_Matrix_free(&b_elem);
                     continue;
                 }
 
-                GrB_Matrix_extractElement(b_elem, B, browindex, bcolindex);
+                GrB_Matrix_extractElement_Scalar(b_elem, B, browindex, bcolindex);
 
-                GxB_Scalar_fprint(a_elem, "a_elem", GxB_COMPLETE, stdout);
-                GxB_Scalar_fprint(b_elem, "b_elem", GxB_COMPLETE, stdout);
+                GB_Scalar_check(a_elem, "a_elem", GxB_COMPLETE, stdout);
+                GB_Scalar_check(b_elem, "b_elem", GxB_COMPLETE, stdout);
 
                 GrB_Scalar c_elem;
-                GrB_Scalar_new(&c_elem, op->ztype);
+                GB_Matrix_new((GrB_Matrix *)(&c_elem), op->ztype, 1, 1);
                 c_elem->x = GB_calloc_memory(1, op->ztype->size, &thread_allocated);
 
                 int32_t val_a, val_b;
@@ -262,10 +265,10 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
 
 
                 nvals_upd++;
-                GrB_Scalar_free(&a_elem);
-                GrB_Scalar_free(&b_elem);
+                GB_Matrix_free(&a_elem);
+                GB_Matrix_free(&b_elem);
                 GB_free_memory(&c_elem->x, op->ztype->size);
-                GrB_Scalar_free(&c_elem);
+                GB_Matrix_free(&c_elem);
             }
 
             printf("%s\n", "did first loop");
@@ -303,14 +306,15 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
                 printf("%d %d %d\n", I_ind_upd[i], J_ind_upd[i], ((int32_t *)vals_upd)[i]);
                         }
             
-            GxB_Matrix_fprint(MT, "MT", GxB_COMPLETE, stdout);
+            GB_Matrix_check(MT, "MT", GxB_COMPLETE, stdout);
 
-            //#include "../builder/GB_build.h"
-            GrB_Info buildres = GrB_Matrix_build(MT, I_ind_upd, J_ind_upd, (void *)vals_upd, nvals_upd, NULL);
+            #include "../builder/GB_build.h"
+            GrB_Info buildres = GB_build(MT, I_ind_upd, J_ind_upd, (void *)vals_upd, nvals_upd, NULL, op->ztype,
+             true, false, false, false, Werk);
 
             printf("%d\n", buildres);
 
-            GxB_Matrix_fprint(MT, "MT", GxB_COMPLETE, stdout);
+            GB_Matrix_check(MT, "MT", GxB_COMPLETE, stdout);
 
             // transpose MT and set CSC if C->is_csc
 
@@ -330,7 +334,7 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
             }
             
             printf("%s\n", "did everything");
-            GxB_Matrix_fprint(MT, "MT", GxB_COMPLETE, stdout);
+            GB_Matrix_check(MT, "MT", GxB_COMPLETE, stdout);
             GB_free_memory(&I_ind, nvals * sizeof(GrB_Index));
             GB_free_memory(&J_ind, nvals * sizeof(GrB_Index));
             GB_free_memory(&vals, nvals * sizeof(bool));
@@ -343,7 +347,7 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
         Mask_struct, Werk);
 
             if (MT != NULL) {
-                GrB_Matrix_free(&MT);
+                GB_Matrix_free(&MT);
             }
             return kron_info;
     }
