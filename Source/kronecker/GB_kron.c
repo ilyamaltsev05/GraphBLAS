@@ -104,6 +104,246 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
     // quick return if an empty mask is complemented
     GB_RETURN_IF_QUICK_MASK (C, C_replace, M, Mask_comp, Mask_struct) ;
 
+    // TODO: check if can apply matrix immediately in kron, select all non-null entries 
+    // with values on corresponding indices on A and B, allocate proper T matrix
+    // pass it to to kroner, return the result
+    // TODO: MT has to have same CSC/CSR format as resulting C and be sparse or hypersparse
+
+    GB_Global_malloc_tracking_set ( false ) ;
+    GrB_Matrix MT;
+    if (M != NULL && !Mask_comp && op->binop_function != NULL) {
+
+        #include "../matrix/GB_matrix.h"
+        GB_Matrix_new(&MT, op->ztype, GB_NROWS(C), GB_NCOLS(C));
+
+            // leave nonzero entries only with needed A and B values present
+            // extract M into tuples, iterate over it and find whether A and B are there and val is nonzero,
+            // allocate updated tuples, build MT from them, pass MT to kroner
+
+            GB_MATRIX_WAIT(M);
+
+            #include "../nvals/GB_nvals.h"
+            GrB_Index nvals = 0;
+            GB_nvals(&nvals, M, Werk);
+
+            #include "../print/GB_check.h"
+            GB_Type_check(A->type, "A type", GxB_COMPLETE, stdout);
+            GB_Type_check(B->type, "B type", GxB_COMPLETE, stdout);
+
+            fflush(stdout);
+
+            // allocate tuples with GB_malloc_memory
+
+            GrB_Index* I_ind = malloc(sizeof(GrB_Index) * nvals);
+            GrB_Index* J_ind = malloc(sizeof(GrB_Index) * nvals);
+            bool* vals = malloc(sizeof(bool) * nvals);
+
+            // array to store elements of C (use calloc)
+            GB_void* c_elems = calloc(1, op->ztype->size * nvals);
+
+            // array to indicate presence of value (use calloc)
+            bool* c_pres = calloc(1, sizeof(bool) * nvals);
+
+            // extract into I_ind, J_ind, vals
+
+            #include "../extractTuples/GB_extractTuples.h"
+            GB_extractTuples(I_ind, false, J_ind, false, vals, &nvals, M->type, M, Werk);
+
+            // get B sizes to compute indices
+
+            GrB_Index brows = 0;
+            GrB_Index bcols = 0;
+
+            if (B_transpose) {
+                bcols = GB_NROWS(B); 
+                brows = GB_NCOLS(B);
+            }
+            else {
+                brows = GB_NROWS(B);
+                bcols = GB_NCOLS(B);
+            }
+
+            // iterate over tuples to count nonzeros with present vals
+
+            GrB_Index nvals_upd = 0;
+
+            #include "GraphBLAS.h"
+            printf("Type size A: %zu\n", A->type->size);
+            //int32_t* aaa = calloc(1, A->type->size);
+            GrB_Scalar aaa;
+            GrB_Scalar_new(&aaa, A->type);
+            //memset(aaa, 0, A->type->size);
+            printf("%d\n", GrB_Matrix_extractElement(aaa, A, 0, 0));
+            //memcpy(aaa, ((GB_void*)A->x), 4);
+            //int32_t aaa_val;
+            //memcpy(&aaa_val, aaa, A->type->size);
+            //printf("%d\n", aaa_val);
+            GB_void rrr [1];
+            printf("%s\n", "one byte only");
+            printf("%d\n", GrB_Matrix_extractElement(rrr, A, 0, 0));
+            GxB_Scalar_fprint(aaa, "value", GxB_COMPLETE, stdout);
+            GrB_Scalar_free(&aaa);
+
+            #pragma omp parallel for reduction(+:nvals_upd)
+            for (GrB_Index mval = 0; mval < nvals; mval++) {
+                if (!Mask_struct && !vals[mval]) {
+                    continue;
+                }
+
+                GrB_Info info_elem = 0;
+                GB_void extractCheckA[A->type->size];
+                GrB_Scalar a_elem;
+                GrB_Scalar_new(&a_elem, A->type);
+
+                GrB_Scalar b_elem;
+                GrB_Scalar_new(&b_elem, B->type);
+
+                GrB_Index arow = 0;
+                GrB_Index acol = 0;
+                if (A_transpose) {
+                    arow = J_ind[mval] / bcols;
+                    acol = I_ind[mval] / brows;
+                }
+                else {
+                    arow = I_ind[mval] / brows;
+                    acol = J_ind[mval] / bcols;
+                }
+
+                info_elem = GrB_Matrix_extractElement(extractCheckA, A, arow, acol);
+                if (info_elem == GrB_NO_VALUE) {
+                    GrB_Scalar_free(&a_elem);
+                    GrB_Scalar_free(&b_elem);
+                    continue;
+                }
+                GrB_Matrix_extractElement(a_elem, A, arow, acol);
+
+                GrB_Index browindex = 0;
+                GrB_Index bcolindex = 0;
+
+                if (B_transpose) {
+                    browindex = J_ind[mval] % bcols;
+                    bcolindex = I_ind[mval] % brows;
+                }
+                else {
+                    browindex = I_ind[mval] % brows;
+                    bcolindex = J_ind[mval] % bcols;
+                }
+
+                GB_void extractCheckB[B->type->size];
+                info_elem = GrB_Matrix_extractElement(extractCheckB, B, browindex, bcolindex);
+                if (info_elem == GrB_NO_VALUE) {
+                    GrB_Scalar_free(&a_elem);
+                    GrB_Scalar_free(&b_elem);
+                    continue;
+                }
+
+                GrB_Matrix_extractElement(b_elem, B, browindex, bcolindex);
+
+                GrB_Scalar c_elem;
+                GrB_Scalar_new(&c_elem, op->ztype);
+                c_elem->x = calloc(1, op->ztype->size);
+
+                int32_t val_a, val_b;
+                memcpy(&val_a, a_elem->x, sizeof(int32_t)); 
+                memcpy(&val_b, b_elem->x, sizeof(int32_t)); 
+
+                printf("%d %d\n", val_a, val_b);
+
+                op->binop_function(c_elem->x, a_elem->x, b_elem->x);
+
+                c_pres[mval] = true;
+
+                memcpy(c_elems + (mval * op->ztype->size), c_elem->x, op->ztype->size);
+
+
+                nvals_upd++;
+                GrB_Scalar_free(&a_elem);
+                GrB_Scalar_free(&b_elem);
+                free(c_elem->x);
+                GrB_Scalar_free(&c_elem);
+            }
+
+            printf("%s\n", "did first loop");
+
+            // allocate updated tuples of size nvals_upd for building resulting matrix
+
+            GrB_Index* I_ind_upd = malloc(sizeof(GrB_Index) * nvals_upd);
+            GrB_Index* J_ind_upd = malloc(sizeof(GrB_Index) * nvals_upd);
+            GB_void* vals_upd = calloc(1,  op->ztype->size * nvals_upd);
+
+            // copy present vals into updated tuples
+
+            GrB_Index next_pos = 0;
+            #pragma omp parallel for
+            for (GrB_Index resval = 0; resval < nvals; resval++) {
+                if (!c_pres[resval]) {
+                    continue;
+                }
+
+                GrB_Index pos = 0;
+                #pragma omp atomic capture 
+                {
+                    pos = next_pos;
+                    next_pos++;
+                }
+
+                I_ind_upd[pos] = I_ind[resval];
+                J_ind_upd[pos] = J_ind[resval];
+                memcpy(vals_upd + (pos * op->ztype->size), c_elems + (resval * op->ztype->size), op->ztype->size);
+            }
+
+            // call GrB_build to build MT from tuples
+
+            for (int i = 0; i < nvals_upd; i++) {
+                printf("%d %d %d\n", I_ind_upd[i], J_ind_upd[i], ((int32_t *)vals_upd)[i]);
+                        }
+            
+            GxB_Matrix_fprint(MT, "MT", GxB_COMPLETE, stdout);
+
+            //#include "../builder/GB_build.h"
+            GrB_Info buildres = GrB_Matrix_build(MT, I_ind_upd, J_ind_upd, (void *)vals_upd, nvals_upd, NULL);
+
+            printf("%d\n", buildres);
+
+            GxB_Matrix_fprint(MT, "MT", GxB_COMPLETE, stdout);
+
+            // transpose MT and set CSC if C->is_csc
+
+            if (MT->is_csc != C->is_csc) {
+                GB_transpose(MT, MT->type, MT->is_csc, MT, NULL, NULL, false, false, Werk);
+                MT->is_csc = C->is_csc;
+            }
+
+            // if MT is not sparse or needs to be hypersparse, convert it
+
+            if (GB_IS_HYPERSPARSE(A) || GB_IS_HYPERSPARSE(B)) {
+                GB_convert_any_to_hyper(MT, Werk);
+            }
+
+            if (GB_IS_BITMAP(MT)) {
+                GB_convert_any_to_sparse(MT, Werk);
+            }
+            
+            printf("%s\n", "did everything");
+            GxB_Matrix_fprint(MT, "MT", GxB_COMPLETE, stdout);
+            free(I_ind);
+            free(J_ind);
+            free(vals);
+            free(I_ind_upd);
+            free(J_ind_upd);
+            free(vals_upd);
+            free(c_elems);
+            free(c_pres);
+            GrB_Info kron_info = GB_accum_mask (C, M, NULL, accum, &MT, C_replace, Mask_comp,
+        Mask_struct, Werk);
+
+            if (MT != NULL) {
+                GrB_Matrix_free(&MT);
+            }
+            GB_Global_malloc_tracking_set ( true ) ;
+            return kron_info;
+    }
+
     //--------------------------------------------------------------------------
     // transpose A and B if requested
     //--------------------------------------------------------------------------

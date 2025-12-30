@@ -35,10 +35,15 @@ bn = 2 ;
 
 Ax = sparse (100 * sprandn (am,an, 0.5)) ;
 Bx = sparse (100 * sprandn (bm,bn, 0.5)) ; 
+whos Ax
+whos Bx
+full(Ax)
+full(Bx)
 cm = am * bm ;
 cn = an * bn ;
 Cx = sparse (cm,cn) ;
 Maskmat = sprandn (cm,cn,0.2) ~= 0 ;
+Maskmat
 ATmat = Ax' ;
 BTmat = Bx' ;
 
@@ -144,8 +149,16 @@ for k2 = [4 7 45:52 ]
                             C0 = GB_spec_kron (C, M, [ ], op, A, B, dnn) ;
                             fprintf('#') ;
                             C1 = GB_mex_kron (C, M, [ ], op, A, B, dnn) ;
-                            %full(C0.matrix)
-                            %full(C1.matrix)
+                            fprintf("\n%s\n", "A");
+                            full(A.matrix)
+                            fprintf("\n%s\n", "B");
+                            full(B.matrix)
+                            fprintf("\n%s\n", "Mask") ;
+                            full(M.matrix)
+                            fprintf("%s\n", "C0") ;
+                            full(C0.matrix)
+                            fprintf("%s\n", "C1") ;
+                            full(C1.matrix)
                             GB_spec_compare(C0, C1) ;
 
                             % kron(A', B) with Mask
