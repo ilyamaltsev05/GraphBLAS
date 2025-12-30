@@ -109,7 +109,6 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
     // pass it to to kroner, return the result
     // TODO: MT has to have same CSC/CSR format as resulting C and be sparse or hypersparse
 
-    GB_Global_malloc_tracking_set ( false ) ;
     GrB_Matrix MT;
     if (M != NULL && !Mask_comp && op->binop_function != NULL) {
 
@@ -133,16 +132,18 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
             fflush(stdout);
 
             // allocate tuples with GB_malloc_memory
-
-            GrB_Index* I_ind = malloc(sizeof(GrB_Index) * nvals);
-            GrB_Index* J_ind = malloc(sizeof(GrB_Index) * nvals);
-            bool* vals = malloc(sizeof(bool) * nvals);
+            size_t allocated = 0;
+            GrB_Index* I_ind = GB_malloc_memory(nvals, sizeof(GrB_Index), &allocated);
+            printf("%s\n", "write this way");
+            GrB_Index* J_ind = GB_malloc_memory(1, sizeof(GrB_Index) * nvals, &allocated);
+            bool* vals = GB_malloc_memory(1, sizeof(bool) * nvals, &allocated);
 
             // array to store elements of C (use calloc)
-            GB_void* c_elems = calloc(1, op->ztype->size * nvals);
+            GB_void* c_elems = GB_calloc_memory(1, op->ztype->size * nvals, &allocated);
 
             // array to indicate presence of value (use calloc)
-            bool* c_pres = calloc(1, sizeof(bool) * nvals);
+            bool* c_pres = GB_calloc_memory(1, sizeof(bool) * nvals, &allocated);
+            printf("%s\n", "fall");
 
             // extract into I_ind, J_ind, vals
 
@@ -190,13 +191,14 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
                     continue;
                 }
 
+                size_t thread_allocated = 0;
                 GrB_Info info_elem = 0;
                 GB_void extractCheckA[A->type->size];
                 GrB_Scalar a_elem;
-                GrB_Scalar_new(&a_elem, A->type);
+                GrB_Scalar_new(&a_elem, op->xtype);
 
                 GrB_Scalar b_elem;
-                GrB_Scalar_new(&b_elem, B->type);
+                GrB_Scalar_new(&b_elem, op->ytype);
 
                 GrB_Index arow = 0;
                 GrB_Index acol = 0;
@@ -239,9 +241,12 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
 
                 GrB_Matrix_extractElement(b_elem, B, browindex, bcolindex);
 
+                GxB_Scalar_fprint(a_elem, "a_elem", GxB_COMPLETE, stdout);
+                GxB_Scalar_fprint(b_elem, "b_elem", GxB_COMPLETE, stdout);
+
                 GrB_Scalar c_elem;
                 GrB_Scalar_new(&c_elem, op->ztype);
-                c_elem->x = calloc(1, op->ztype->size);
+                c_elem->x = GB_calloc_memory(1, op->ztype->size, &thread_allocated);
 
                 int32_t val_a, val_b;
                 memcpy(&val_a, a_elem->x, sizeof(int32_t)); 
@@ -259,7 +264,7 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
                 nvals_upd++;
                 GrB_Scalar_free(&a_elem);
                 GrB_Scalar_free(&b_elem);
-                free(c_elem->x);
+                GB_free_memory(&c_elem->x, op->ztype->size);
                 GrB_Scalar_free(&c_elem);
             }
 
@@ -267,9 +272,9 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
 
             // allocate updated tuples of size nvals_upd for building resulting matrix
 
-            GrB_Index* I_ind_upd = malloc(sizeof(GrB_Index) * nvals_upd);
-            GrB_Index* J_ind_upd = malloc(sizeof(GrB_Index) * nvals_upd);
-            GB_void* vals_upd = calloc(1,  op->ztype->size * nvals_upd);
+            GrB_Index* I_ind_upd = GB_malloc_memory(1, sizeof(GrB_Index) * nvals_upd, &allocated);
+            GrB_Index* J_ind_upd = GB_malloc_memory(1, sizeof(GrB_Index) * nvals_upd, &allocated);
+            GB_void* vals_upd = GB_calloc_memory(1,  op->ztype->size * nvals_upd, &allocated);
 
             // copy present vals into updated tuples
 
@@ -326,21 +331,20 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
             
             printf("%s\n", "did everything");
             GxB_Matrix_fprint(MT, "MT", GxB_COMPLETE, stdout);
-            free(I_ind);
-            free(J_ind);
-            free(vals);
-            free(I_ind_upd);
-            free(J_ind_upd);
-            free(vals_upd);
-            free(c_elems);
-            free(c_pres);
+            GB_free_memory(&I_ind, nvals * sizeof(GrB_Index));
+            GB_free_memory(&J_ind, nvals * sizeof(GrB_Index));
+            GB_free_memory(&vals, nvals * sizeof(bool));
+            GB_free_memory(&I_ind_upd, nvals_upd * sizeof(GrB_Index));
+            GB_free_memory(&J_ind_upd, nvals_upd * sizeof(GrB_Index));
+            GB_free_memory(&vals_upd, nvals_upd * op->ztype->size);
+            GB_free_memory(&c_elems, nvals * op->ztype->size);
+            GB_free_memory(&c_pres, nvals * sizeof(bool));
             GrB_Info kron_info = GB_accum_mask (C, M, NULL, accum, &MT, C_replace, Mask_comp,
         Mask_struct, Werk);
 
             if (MT != NULL) {
                 GrB_Matrix_free(&MT);
             }
-            GB_Global_malloc_tracking_set ( true ) ;
             return kron_info;
     }
 

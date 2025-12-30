@@ -33,10 +33,12 @@ an = 3 ;
 bm = 4 ;
 bn = 2 ;
 
-Ax = sparse (100 * sprandn (am,an, 0.5)) ;
-Bx = sparse (100 * sprandn (bm,bn, 0.5)) ; 
-whos Ax
-whos Bx
+Ax_temp = 100 * sprandn (am, an, 0.5);
+Bx_temp = 100 * sprandn (bm, bn, 0.5);
+
+Ax = sparse(round(Ax_temp));
+Bx = sparse(round(Bx_temp));
+
 full(Ax)
 full(Bx)
 cm = am * bm ;
