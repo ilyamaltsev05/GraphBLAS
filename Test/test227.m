@@ -149,6 +149,8 @@ for k2 = [4 7 45:52 ]
 
                             % kron(A, B) with Mask
                             C0 = GB_spec_kron (C, M, [ ], op, A, B, dnn) ;
+                            fprintf("%s\n", "C0") ;
+                            full(C0.matrix)
                             fprintf('#') ;
                             C1 = GB_mex_kron (C, M, [ ], op, A, B, dnn) ;
                             fprintf("\n%s\n", "A");
