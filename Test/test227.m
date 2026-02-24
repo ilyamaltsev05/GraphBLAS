@@ -166,19 +166,25 @@ for k2 = [4 7 45:52 ]
                             GB_spec_compare(C0, C1) ;
 
                             % kron(A', B) with Mask
+                            fprintf("%s\n", "transposed A") ;
                             C0 = GB_spec_kron (C, M, [ ], op, AT, B, dtn) ;
                             C1 = GB_mex_kron  (C, M, [ ], op, AT, B, dtn) ;
                             GB_spec_compare (C0, C1) ;
 
                             % kron(A, B') with Mask
+                            fprintf("%s\n", "transposed A ok") ;
+                            fprintf("%s\n", "transposed B") ;
                             C0 = GB_spec_kron (C, M, [ ], op, A, BT, dnt) ;
                             C1 = GB_mex_kron  (C, M, [ ], op, A, BT, dnt) ;
                             GB_spec_compare (C0, C1) ;
 
                             % kron(A', B') with Mask
+                            fprintf("%s\n", "transposed B ok") ;
+                            fprintf("%s\n", "transposed A and B") ;
                             C0 = GB_spec_kron (C, M, [ ], op, AT, BT, dtt) ;
                             C1 = GB_mex_kron  (C, M, [ ], op, AT, BT, dtt) ;
                             GB_spec_compare (C0, C1) ;
+                            fprintf("%s\n", "transposed A and B ok") ;
 
                             end
                             end
