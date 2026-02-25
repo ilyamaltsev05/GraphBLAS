@@ -112,8 +112,6 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
     GrB_Matrix MT;
     if (M != NULL && !Mask_comp && op->binop_function != NULL) {
         #include "stdio.h"
-        //GB_convert_any_to_bitmap (M, Werk) ;
-        //GB_convert_any_to_hyper (A, Werk) ;
 
         // iterate over mask, count how many elements will be present in MT
         // determine number of entries in MT (MT->p basically)
@@ -122,8 +120,8 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
         GB_MATRIX_WAIT(A);
         GB_MATRIX_WAIT(B);
 
-        GxB_Matrix_fprint (A, "A", GxB_COMPLETE, stdout) ;
-        GxB_Matrix_fprint (B, "B", GxB_COMPLETE, stdout) ;
+        //GxB_Matrix_fprint (A, "A", GxB_COMPLETE, stdout) ;
+        //GxB_Matrix_fprint (B, "B", GxB_COMPLETE, stdout) ;
 
         size_t allocated = 0 ;
         bool MT_hypersparse = (A->h != NULL) || (B->h != NULL);
@@ -133,6 +131,7 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
         int32_t* MTp32 = NULL ; int64_t* MTp64 = NULL ;
         MTp32 = M->p_is_32 ? GB_calloc_memory (M->vdim + 2, sizeof(int32_t), &allocated) : NULL ;
         MTp64 = M->p_is_32 ? NULL : GB_calloc_memory (M->vdim + 2, sizeof(int64_t), &allocated) ;
+        bool MTiso = A->iso && B->iso ;
 
         // declare needed pointers
         GB_Mp_DECLARE(Mp, ) ;
@@ -149,9 +148,7 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
         #define GBP(Ap,k,avlen) ((Ap == NULL) ? ((k) * (avlen)) : Ap [k])
         #define GBH(Ah,k)       ((Ah == NULL) ? (k) : Ah [k])
 
-        #include "../element/GrB_Matrix_extractElement.c"
-
-        GxB_Matrix_fprint (M, "M", GxB_COMPLETE, stdout) ;
+        //GxB_Matrix_fprint (M, "M", GxB_COMPLETE, stdout) ;
 
         int64_t vlen = M->vlen ;
         #pragma omp parallel
@@ -175,9 +172,9 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
                     if (!GBB (M->b, p)) continue ;
                     // entry A(i,j) with row index i and value aij
                     int64_t i = Mi32 ? GBI (Mi32, p, vlen) : GBI (Mi64, p, vlen) ;
-                    printf("i and j: %d %d\n", i, j) ;
+                    //printf("i and j: %d %d\n", i, j) ;
                     GrB_Index Mrow = M->is_csc ? i : j ; GrB_Index Mcol = M->is_csc ? j : i ;
-                    printf("%s: %d %d\n", "row and col", Mrow, Mcol);
+                    //printf("%s: %d %d\n", "row and col", Mrow, Mcol);
 
                     // extract elements from A and B, increment MTp
                     if (Mask_struct || (M->iso ? ((int8_t*)M->x)[0] : ((int8_t*)M->x)[p])) {
@@ -188,25 +185,25 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
                         GrB_Index brow = B_transpose ? (Mcol % bncols) : (Mrow % bnrows);
                         GrB_Index bcol = B_transpose ? (Mrow % bnrows) : (Mcol % bncols);
 
-                        printf("bnrows=%llu bncols=%llu A_transpose=%d B_transpose=%d\n", bnrows, bncols, A_transpose, B_transpose);
+                        /*printf("bnrows=%llu bncols=%llu A_transpose=%d B_transpose=%d\n", bnrows, bncols, A_transpose, B_transpose);
                         printf("Mrow=%llu Mcol=%llu\n", Mrow, Mcol);
                         printf("arow=%llu acol=%llu\n", arow, acol);
-                        printf("brow=%llu bcol=%llu\n", brow, bcol);
+                        printf("brow=%llu bcol=%llu\n", brow, bcol);*/
 
 
                         GrB_Index code = GrB_Matrix_extractElement_Scalar(a_elem, A, arow, acol) ;
-                        printf("a elem code nvals: %d %d\n", code, a_elem->nvals) ;
+                        //printf("a elem code nvals: %d %d\n", code, a_elem->nvals) ;
                         if (code != GrB_SUCCESS || a_elem->nvals != 1) {
                             continue;
                         }
 
                         code = GrB_Matrix_extractElement_Scalar(b_elem, B, brow, bcol) ;
-                        printf("b elem code: %d\n", code) ;
+                        //printf("b elem code: %d\n", code) ;
                         if (code != GrB_SUCCESS || b_elem->nvals != 1) {
                             continue;
                         }
 
-                        printf("incrementing: %d\n", k + 1) ;
+                        //printf("incrementing: %d\n", k + 1) ;
 
                         if (M->h == NULL) {
                             if (M->p_is_32) {
@@ -244,10 +241,10 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
         M->p_is_32 ? GB_cumsum(MTp32, M->p_is_32, M->vdim + 1, NULL, cumsum_threads, Werk) : GB_cumsum(MTp64, M->p_is_32, 
             M->vdim + 1, NULL, cumsum_threads, Werk) ;
 
-        printf("\nPointers array:\n") ;
+        /*printf("\nPointers array:\n") ;
         for (int64_t i = 0; i < M->vdim + 1; i++) M->p_is_32 ? printf("%d ", MTp32[i]) : 
         printf("%d ", MTp64[i]) ;
-        printf("\n") ;
+        printf("\n") ;*/
 
         // another iteration over M to determine MT->i and MT->x
 
@@ -258,28 +255,39 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
             memmove(MTp64, MTp64 + 1, (M->vdim + 1) * sizeof(int64_t));
         }
 
-        printf("\nPointers array:\n") ;
+        /*printf("\nPointers array:\n") ;
         for (int64_t i = 0; i < M->vdim + 1; i++) M->p_is_32 ? printf("%d ", MTp32[i]) : 
         printf("%d ", MTp64[i]) ;
-        printf("\n") ;
+        printf("\n") ;*/
 
         centries = M->p_is_32 ? MTp32[M->vdim] : MTp64[M->vdim] ;
         int32_t* MTi32 = NULL ; int64_t* MTi64 = NULL;
         MTi32 = M->i_is_32 ? GB_calloc_memory (centries, sizeof(int32_t), &allocated) : NULL ;
         MTi64 = M->i_is_32 ? NULL : GB_calloc_memory (centries, sizeof(int64_t), &allocated) ;
 
-        void* MTx = GB_calloc_memory (centries, op->ztype->size, &allocated) ;
+        void* MTx = NULL ;
+        if (!MTiso) {
+            MTx = GB_calloc_memory (centries, op->ztype->size, &allocated) ;
+        }
+        else {
+            MTx = GB_calloc_memory (1, op->ztype->size, &allocated) ;
+            op->binop_function(MTx, A->x, B->x) ;
+        }
 
         #pragma omp parallel
         {
             GrB_Scalar a_elem ;
-            GrB_Matrix_new(&a_elem, op->xtype, 1, 1) ;
             GrB_Scalar b_elem ;
-            GrB_Matrix_new(&b_elem, op->ytype, 1, 1) ;
             GrB_Scalar c_elem ;
-            GrB_Matrix_new(&c_elem, op->ztype, 1, 1) ;
-            size_t allocated = 0 ;
-            c_elem->x = GB_calloc_memory (1, op->ztype->size, &allocated) ;
+
+            if (!MTiso) 
+            {
+                GrB_Matrix_new(&a_elem, op->xtype, 1, 1) ;
+                GrB_Matrix_new(&b_elem, op->ytype, 1, 1) ;
+                GrB_Matrix_new(&c_elem, op->ztype, 1, 1) ;
+                size_t allocated = 0 ;
+                c_elem->x = GB_calloc_memory (1, op->ztype->size, &allocated) ;
+            }
             #pragma omp for
             for (GrB_Index k = 0 ; k < M->nvec ; k++)
             {
@@ -288,18 +296,18 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
                 int64_t pA_start = Mp32 ? GBP (Mp32, k, vlen) : GBP(Mp64, k, vlen) ;
                 int64_t pA_end   = Mp32 ? GBP (Mp32, k+1, vlen) : GBP(Mp64, k+1, vlen) ;
                 GrB_Index pos = M->p_is_32 ? MTp32[k] : MTp64[k] ;
-                printf("k and pos: %d %d\n", k, pos) ;
+                //printf("k and pos: %d %d\n", k, pos) ;
                 for (GrB_Index p = pA_start ; p < pA_end ; p++)
                 {
                     if (!GBB (M->b, p)) continue ;
                     // entry A(i,j) with row index i and value aij
                     int64_t i = Mi32 ? GBI (Mi32, p, vlen) : GBI (Mi64, p, vlen) ;
                     GrB_Index Mrow = M->is_csc ? i : j ; GrB_Index Mcol = M->is_csc ? j : i ;
-                    printf("%s: %d %d\n", "row and col", Mrow, Mcol);
+                    //printf("%s: %d %d\n", "row and col", Mrow, Mcol);
 
                     // extract elements from A and B, initialize offset of MTi, get result of op, 
                     // place it in MTx
-                    if (Mask_struct || (((int8_t*)M->x)[p])) {
+                    if (Mask_struct || (M->iso ? ((int8_t*)M->x)[0] : ((int8_t*)M->x)[p])) {
 
                         GrB_Index arow = A_transpose ? (Mcol / bncols) : (Mrow / bnrows);
                         GrB_Index acol = A_transpose ? (Mrow / bnrows) : (Mcol / bncols);
@@ -307,29 +315,31 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
                         GrB_Index brow = B_transpose ? (Mcol % bncols) : (Mrow % bnrows);
                         GrB_Index bcol = B_transpose ? (Mrow % bnrows) : (Mcol % bncols);
 
-                        printf("bnrows=%llu bncols=%llu A_transpose=%d B_transpose=%d\n", bnrows, bncols, A_transpose, B_transpose);
-                        printf("Mrow=%llu Mcol=%llu\n", Mrow, Mcol);
-                        printf("arow=%llu acol=%llu\n", arow, acol);
-                        printf("brow=%llu bcol=%llu\n", brow, bcol);
+                        //printf("bnrows=%llu bncols=%llu A_transpose=%d B_transpose=%d\n", bnrows, bncols, A_transpose, B_transpose);
+                        //printf("Mrow=%llu Mcol=%llu\n", Mrow, Mcol);
+                        //printf("arow=%llu acol=%llu\n", arow, acol);
+                        //printf("brow=%llu bcol=%llu\n", brow, bcol);
 
 
                         GrB_Index code = GrB_Matrix_extractElement_Scalar(a_elem, A, arow, acol) ;
-                        printf("a elem code: %d\n", code) ;
+                        //printf("a elem code: %d\n", code) ;
                         if (code != GrB_SUCCESS || a_elem->nvals != 1) {
                             continue;
                         }
 
                         code = GrB_Matrix_extractElement_Scalar(b_elem, B, brow, bcol) ;
-                        printf("b elem code: %d\n", code) ;
+                        //printf("b elem code: %d\n", code) ;
                         if (code != GrB_SUCCESS || b_elem->nvals != 1) {
                             continue;
                         }
 
-                        op->binop_function(c_elem->x, a_elem->x, b_elem->x) ;
+                        if (!MTiso) {
+                            op->binop_function(c_elem->x, a_elem->x, b_elem->x) ;
 
-                        printf("pos: %d\n", pos) ;
+                            //printf("pos: %d\n", pos) ;
 
-                        memcpy(MTx + op->ztype->size * pos, c_elem->x, op->ztype->size) ;
+                            memcpy(MTx + op->ztype->size * pos, c_elem->x, op->ztype->size) ;
+                        }
 
                         if (M->i_is_32) { MTi32[pos] = i ; } else { MTi64[pos] = i ; }
                         pos++ ;
@@ -348,7 +358,7 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
         // take case of iso in account as well
         // think of index binary operations
 
-        printf("\nPointers array:\n") ;
+        /*printf("\nPointers array:\n") ;
         for (int64_t i = 0; i < M->vdim + 1; i++) M->p_is_32 ? printf("%d ", MTp32[i]) : 
         printf("%d ", MTp64[i]) ;
         printf("\n") ;
@@ -356,11 +366,11 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
         printf("\nColumns array:\n") ;
         for (int64_t i = 0; i < centries; i++) M->i_is_32 ? printf("%d ", MTi32[i]) : 
         printf("%d ", MTi64[i]) ;
-        printf("\n") ;
+        printf("\n") ;*/
 
-        printf("\nValues array:\n") ;
-        for (int64_t i = 0 ; i < centries ; i++) printf("%d ", ((int32_t *)MTx)[i]) ;
-        printf("\n") ;
+        //printf("\nValues array:\n") ;
+        //for (int64_t i = 0 ; i < centries ; i++) printf("%d ", ((int32_t *)MTx)[i]) ;
+        //printf("\n") ;
 
         //printf("centries: %d\n", centries) ;
         MT = NULL ;
@@ -372,9 +382,10 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
         GB_free_memory (&MT->x, MT->x_size) ;
 
 
-        MT->p = M->p_is_32 ? MTp32 : MTp64 ;
-        MT->i = M->i_is_32 ? MTi32 : MTi64 ;
+        MT->p = M->p_is_32 ? (void*)MTp32 : (void*)MTp64 ;
+        MT->i = M->i_is_32 ? (void*)MTi32 : (void*)MTi64 ;
         MT->x = MTx ;
+        MT->iso = MTiso ;
 
         MT->p_size = (M->p_is_32 ? sizeof(int32_t) : sizeof(int64_t)) * (M->vdim + 2) ;
         MT->i_size = centries ? ((M->i_is_32 ? sizeof(int32_t) : sizeof(int64_t)) * centries) : (M->i_is_32 ? sizeof(int32_t) : sizeof(int64_t)) ;
@@ -385,26 +396,26 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
 
         GB_MATRIX_WAIT(MT) ;
 
-printf("MT fields:\n") ;
+/*printf("MT fields:\n") ;
 printf("  vlen=%lld vdim=%lld\n", MT->vlen, MT->vdim) ;
 printf("  nvec=%lld plen=%lld\n", MT->nvec, MT->plen) ;
 printf("  nvals=%lld nvec_nonempty=%lld\n", MT->nvals, MT->nvec_nonempty) ;
 printf("  is_csc=%d magic=%d\n", MT->is_csc, MT->magic) ;
 printf("  p=%p i=%p x=%p\n", MT->p, MT->i, MT->x) ;
-printf("  p_is_32=%d i_is_32=%d j_is_32=%d\n", MT->p_is_32, MT->i_is_32, MT->j_is_32) ;
-printf("  Mp_is_32=%d Mi_is_32=%d Mj_is_32=%d\n", M->p_is_32, M->i_is_32, M->j_is_32) ;
+printf("  p_is_32=%d i_is_32=%d j_is_32=%d\n", MT->p_is_32, MT->i_is_32, MT->j_is_32) ;*/
+//printf("  Mp_is_32=%d Mi_is_32=%d Mj_is_32=%d\n", M->p_is_32, M->i_is_32, M->j_is_32) ;
 //printf("p[0]=%d p[nvec]=%d\n", MTp32[0], MTp32[MT->nvec]) ;
-printf("MTp %d\n", MTp32) ;
+//printf("MTp %d\n", MTp32) ;
 
-        GxB_Matrix_fprint (MT, "MT", GxB_COMPLETE, stdout) ;
+        //GxB_Matrix_fprint (MT, "MT", GxB_COMPLETE, stdout) ;
 
         // GB_hyper_prune and transpose and cast if needed
 
         if (MT->is_csc != C->is_csc) 
         {
             GB_transpose_in_place (MT, true, Werk) ;
-            printf("MT in csc fields:\n") ;
-printf("  vlen=%lld vdim=%lld\n", MT->vlen, MT->vdim) ;
+            //printf("MT in csc fields:\n") ;
+/*printf("  vlen=%lld vdim=%lld\n", MT->vlen, MT->vdim) ;
 printf("  nvec=%lld plen=%lld\n", MT->nvec, MT->plen) ;
 printf("  nvals=%lld nvec_nonempty=%lld\n", MT->nvals, MT->nvec_nonempty) ;
 printf("  is_csc=%d magic=%d\n", MT->is_csc, MT->magic) ;
@@ -412,9 +423,9 @@ printf("  p=%p i=%p x=%p\n", MT->p, MT->i, MT->x) ;
 printf("  p_is_32=%d i_is_32=%d j_is_32=%d\n", MT->p_is_32, MT->i_is_32, MT->j_is_32) ;
 printf("  Mp_is_32=%d Mi_is_32=%d Mj_is_32=%d\n", M->p_is_32, M->i_is_32, M->j_is_32) ;
 //printf("p[0]=%d p[nvec]=%d\n", MTp32[0], MTp32[MT->nvec]) ;
-printf("MTp %d\n", MTp32) ;
+printf("MTp %d\n", MTp32) ;*/
 
-        GxB_Matrix_fprint (MT, "MT csc", GxB_COMPLETE, stdout) ;
+        //GxB_Matrix_fprint (MT, "MT csc", GxB_COMPLETE, stdout) ;
         }
 
         if (MT_hypersparse) {
@@ -431,11 +442,11 @@ printf("MTp %d\n", MTp32) ;
                 if (MT->j_is_32) { MTh32[i] = i ; } else { MTh64[i] = i ; } 
             }
 
-            MT->h = MTh32 ? MTh32 : MTh64 ;
+            MT->h = MTh32 ? (void*)MTh32 : (void*)MTh64 ;
 
             GB_hyper_prune (MT, Werk) ;
 
-            GxB_Matrix_fprint (MT, "hyper MT", GxB_COMPLETE, stdout) ;
+            //GxB_Matrix_fprint (MT, "hyper MT", GxB_COMPLETE, stdout) ;
         }
 
         // return GB_accum_mask
