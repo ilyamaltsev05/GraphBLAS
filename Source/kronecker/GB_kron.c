@@ -270,8 +270,15 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
             MTx = GB_calloc_memory (centries, op->ztype->size, &allocated) ;
         }
         else {
+            GB_void a_elem[A->type->size] ;
+            GB_void b_elem[B->type->size] ;
+            GB_cast_function cast_A = NULL ; GB_cast_function cast_B = NULL ;
+            cast_A = GB_cast_factory (op->xtype->code, A->type->code) ;
+            cast_B = GB_cast_factory (op->ytype->code, B->type->code) ;
+            cast_A (a_elem, A->x, A->type->size) ;
+            cast_B (b_elem, B->x, B->type->size) ;
             MTx = GB_calloc_memory (1, op->ztype->size, &allocated) ;
-            op->binop_function(MTx, A->x, B->x) ;
+            op->binop_function(MTx, a_elem, b_elem) ;
         }
 
         #pragma omp parallel
@@ -280,10 +287,11 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
             GrB_Scalar b_elem ;
             GrB_Scalar c_elem ;
 
+            GrB_Matrix_new(&a_elem, op->xtype, 1, 1) ;
+            GrB_Matrix_new(&b_elem, op->ytype, 1, 1) ;
+
             if (!MTiso) 
             {
-                GrB_Matrix_new(&a_elem, op->xtype, 1, 1) ;
-                GrB_Matrix_new(&b_elem, op->ytype, 1, 1) ;
                 GrB_Matrix_new(&c_elem, op->ztype, 1, 1) ;
                 size_t allocated = 0 ;
                 c_elem->x = GB_calloc_memory (1, op->ztype->size, &allocated) ;
@@ -346,10 +354,12 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
                     }
                 }
             }
-            GB_Matrix_free (&a_elem) ;
-            GB_Matrix_free (&b_elem) ;
-            GB_free_memory(&c_elem->x, op->ztype->size) ;
-            GB_Matrix_free (&c_elem) ;
+            if (!MTiso) {
+                GB_Matrix_free (&a_elem) ;
+                GB_Matrix_free (&b_elem) ;
+                GB_free_memory(&c_elem->x, op->ztype->size) ;
+                GB_Matrix_free (&c_elem) ;
+            }
         }
 
         // initialize other fields of MT properly
