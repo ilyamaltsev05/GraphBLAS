@@ -39,13 +39,10 @@ Bx_temp = 100 * sprandn (bm, bn, 0.5);
 Ax = sparse(round(Ax_temp));
 Bx = sparse(round(Bx_temp));
 
-full(Ax)
-full(Bx)
 cm = am * bm ;
 cn = an * bn ;
 Cx = sparse (cm,cn) ;
 Maskmat = sprandn (cm,cn,0.2) ~= 0 ;
-Maskmat
 ATmat = Ax' ;
 BTmat = Bx' ;
 
@@ -149,43 +146,24 @@ for k2 = [4 7 45:52 ]
 
                             % kron(A, B) with Mask
                             C0 = GB_spec_kron (C, M, [ ], op, A, B, dnn) ;
-                            fprintf("%s\n", "C0") ;
-                            full(C0.matrix)
                             fprintf('#') ;
                             C1 = GB_mex_kron (C, M, [ ], op, A, B, dnn) ;
-                            fprintf("\n%s\n", "A");
-                            full(A.matrix)
-                            fprintf("\n%s\n", "B");
-                            full(B.matrix)
-                            fprintf("\n%s\n", "Mask") ;
-                            full(M.matrix)
-                            fprintf("%s\n", "C0") ;
-                            full(C0.matrix)
-                            fprintf("%s\n", "C1") ;
-                            full(C1.matrix)
                             GB_spec_compare(C0, C1) ;
 
                             % kron(A', B) with Mask
-                            fprintf("%s\n", "transposed A") ;
                             C0 = GB_spec_kron (C, M, [ ], op, AT, B, dtn) ;
                             C1 = GB_mex_kron  (C, M, [ ], op, AT, B, dtn) ;
                             GB_spec_compare (C0, C1) ;
 
                             % kron(A, B') with Mask
-                            fprintf("%s\n", "transposed A ok") ;
-                            fprintf("%s\n", "transposed B") ;
                             C0 = GB_spec_kron (C, M, [ ], op, A, BT, dnt) ;
                             C1 = GB_mex_kron  (C, M, [ ], op, A, BT, dnt) ;
                             GB_spec_compare (C0, C1) ;
 
                             % kron(A', B') with Mask
-                            fprintf("%s\n", "transposed B ok") ;
-                            fprintf("%s\n", "transposed A and B") ;
                             C0 = GB_spec_kron (C, M, [ ], op, AT, BT, dtt) ;
                             C1 = GB_mex_kron  (C, M, [ ], op, AT, BT, dtt) ;
                             GB_spec_compare (C0, C1) ;
-                            fprintf("%s\n", "transposed A and B ok") ;
-
                             end
                             end
                         end
