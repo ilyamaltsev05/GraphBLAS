@@ -38,6 +38,10 @@ static bool GB_lookup_xoffset (
     GrB_Index vector = A->is_csc ? col : row ;
     GrB_Index coord  = A->is_csc ? row : col ;
 
+    if (A->iso) {
+        *p = 0 ;
+    }
+
     if (A->p == NULL) {
         GrB_Index offset = vector * A->vlen + coord ;
         if (A->b == NULL || ((int8_t*)A->b)[offset]) {
@@ -74,6 +78,8 @@ static bool GB_lookup_xoffset (
         return res ;
     }
 }
+
+#include "emult/GB_emult.h"
 
 GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
 (
@@ -157,7 +163,7 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
     // TODO: MT has to have same CSC/CSR format as resulting C and be sparse or hypersparse
 
     GrB_Matrix MT;
-    if (M != NULL && !Mask_comp && op->binop_function != NULL) {
+    if (M != NULL && !Mask_comp && op->binop_function) {
 
         // iterate over mask, count how many elements will be present in MT
         // determine number of entries in MT (MT->p basically)
@@ -172,7 +178,20 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
         uint32_t* MTp32 = NULL ; uint64_t* MTp64 = NULL ;
         MTp32 = M->p_is_32 ? GB_calloc_memory (M->vdim + 2, sizeof(uint32_t), &allocated) : NULL ;
         MTp64 = M->p_is_32 ? NULL : GB_calloc_memory (M->vdim + 2, sizeof(uint64_t), &allocated) ;
-        bool MTiso = A->iso && B->iso ;
+        GrB_Type MTtype = op->ztype ;
+        const size_t MTsize = MTtype->size ;
+        GB_void MTscalar [GB_VLA(MTsize)] ;
+        bool MTiso =  GB_emult_iso (MTscalar, MTtype, A, B, op) ;
+        #include "stdio.h"
+        printf("MT is iso: %d\n", MTiso) ;
+        bool A_is_pattern, B_is_pattern ;
+        GB_binop_pattern (&A_is_pattern, &B_is_pattern, false, op->opcode) ;
+        if (MTiso)
+        { 
+            GBURBLE ("(iso kron) ") ;
+            A_is_pattern = true ;
+            B_is_pattern = true ;
+        }
 
         // declare needed pointers
         GB_Mp_DECLARE(Mp, ) ;
@@ -282,14 +301,8 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
             MTx = GB_calloc_memory (centries, op->ztype->size, &allocated) ;
         }
         else {
-            GB_void a_elem[A->type->size] ;
-            GB_void b_elem[B->type->size] ;
-
-            cast_A (a_elem, A->x, A->type->size) ;
-            cast_B (b_elem, B->x, B->type->size) ;
-
             MTx = GB_calloc_memory (1, op->ztype->size, &allocated) ;
-            op->binop_function(MTx, a_elem, b_elem) ;
+            memcpy (MTx, MTscalar, MTsize) ;
         }
 
         #pragma omp parallel
@@ -350,7 +363,7 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
 
         MT = NULL ;
         GB_OK (GB_new_bix (&MT, op->ztype, vlen, M->vdim, GB_ph_null, M->is_csc, 
-        GxB_SPARSE, true, M->hyper_switch, M->vdim + 1, centries, true, false, 
+        GxB_SPARSE, true, M->hyper_switch, M->vdim + 1, centries, true, MTiso, 
         M->p_is_32, M->j_is_32, M->i_is_32)) ;
 
         GB_free_memory (&MT->i, MT->i_size) ;
@@ -360,7 +373,7 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
         MT->p = M->p_is_32 ? (void*)MTp32 : (void*)MTp64 ;
         MT->i = M->i_is_32 ? (void*)MTi32 : (void*)MTi64 ;
         MT->x = MTx ;
-        MT->iso = MTiso ;
+        //MT->iso = MTiso ;
 
         MT->p_size = (M->p_is_32 ? sizeof(int32_t) : sizeof(int64_t)) * (M->vdim + 2) ;
         MT->i_size = centries ? ((M->i_is_32 ? sizeof(int32_t) : sizeof(int64_t)) * centries) : (M->i_is_32 ? sizeof(int32_t) : sizeof(int64_t)) ;
