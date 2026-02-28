@@ -38,14 +38,10 @@ static bool GB_lookup_xoffset (
     GrB_Index vector = A->is_csc ? col : row ;
     GrB_Index coord  = A->is_csc ? row : col ;
 
-    if (A->iso) {
-        *p = 0 ;
-    }
-
     if (A->p == NULL) {
         GrB_Index offset = vector * A->vlen + coord ;
         if (A->b == NULL || ((int8_t*)A->b)[offset]) {
-            *p = offset ;
+            *p = A->iso ? 0 : offset ;
             return true ;
         }
         return false ;
@@ -60,7 +56,7 @@ static bool GB_lookup_xoffset (
         end-- ;
         if (start > end) return false ;
         res = GB_binary_search(coord, A->i, A->i_is_32, &start, &end) ;
-        if (res) { *p = start ; }
+        if (res) { *p = A->iso ? 0 : start ; }
         return res ;
     } 
     else 
@@ -74,7 +70,7 @@ static bool GB_lookup_xoffset (
         end-- ;
         if (start > end) return false ;
         res = GB_binary_search(coord, A->i, A->i_is_32, &start, &end) ;
-        if (res) { *p = start ; }
+        if (res) { *p = A->iso ? 0 : start ; }
         return res ;
     }
 }
@@ -157,16 +153,15 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
     // quick return if an empty mask is complemented
     GB_RETURN_IF_QUICK_MASK (C, C_replace, M, Mask_comp, Mask_struct) ;
 
-    // TODO: check if can apply matrix immediately in kron, select all non-null entries 
-    // with values on corresponding indices on A and B, allocate proper T matrix
-    // pass it to to kroner, return the result
-    // TODO: MT has to have same CSC/CSR format as resulting C and be sparse or hypersparse
+    // check if it's possible to apply mask immediately in kron
+    // TODO: make MT of same CSR/CSC format as C
+    // TODO: add kronecker with mask evaluation in test226 and in test286
 
     GrB_Matrix MT;
-    if (M != NULL && !Mask_comp && op->binop_function) {
+    if (M != NULL && !Mask_comp) {
 
         // iterate over mask, count how many elements will be present in MT
-        // determine number of entries in MT (MT->p basically)
+        // initialize MT->p
 
         GB_MATRIX_WAIT(M);
 
@@ -175,25 +170,16 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
         uint64_t centries, nvecs;
         centries = 0 ;
         nvecs = 0 ;
+
         uint32_t* MTp32 = NULL ; uint64_t* MTp64 = NULL ;
         MTp32 = M->p_is_32 ? GB_calloc_memory (M->vdim + 2, sizeof(uint32_t), &allocated) : NULL ;
         MTp64 = M->p_is_32 ? NULL : GB_calloc_memory (M->vdim + 2, sizeof(uint64_t), &allocated) ;
+
         GrB_Type MTtype = op->ztype ;
         const size_t MTsize = MTtype->size ;
         GB_void MTscalar [GB_VLA(MTsize)] ;
         bool MTiso =  GB_emult_iso (MTscalar, MTtype, A, B, op) ;
-        #include "stdio.h"
-        printf("MT is iso: %d\n", MTiso) ;
-        bool A_is_pattern, B_is_pattern ;
-        GB_binop_pattern (&A_is_pattern, &B_is_pattern, false, op->opcode) ;
-        if (MTiso)
-        { 
-            GBURBLE ("(iso kron) ") ;
-            A_is_pattern = true ;
-            B_is_pattern = true ;
-        }
 
-        // declare needed pointers
         GB_Mp_DECLARE(Mp, ) ;
         GB_Mp_PTR(Mp, M) ;
 
@@ -223,18 +209,19 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
             for (GrB_Index k = 0 ; k < M->nvec ; k++)
             {
                 GrB_Index j = Mh32 ? GBH (Mh32, k) : GBH (Mh64, k) ;
-                // operate on column A(:,j)
+
                 int64_t pA_start = Mp32 ? GBP (Mp32, k, vlen) : GBP(Mp64, k, vlen) ;
                 int64_t pA_end   = Mp32 ? GBP (Mp32, k+1, vlen) : GBP(Mp64, k+1, vlen) ;
                 bool nonempty = false ;
                 for (GrB_Index p = pA_start ; p < pA_end ; p++)
                 {
                     if (!GBB (M->b, p)) continue ;
-                    // entry A(i,j) with row index i and value aij
+
                     int64_t i = Mi32 ? GBI (Mi32, p, vlen) : GBI (Mi64, p, vlen) ;
                     GrB_Index Mrow = M->is_csc ? i : j ; GrB_Index Mcol = M->is_csc ? j : i ;
 
                     // extract elements from A and B, increment MTp
+
                     if (Mask_struct || (M->iso ? ((int8_t*)M->x)[0] : ((int8_t*)M->x)[p])) {
 
                         GrB_Index arow = A_transpose ? (Mcol / bncols) : (Mrow / bnrows);
@@ -253,23 +240,27 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
                             continue;
                         }
 
-                        if (M->h == NULL) {
-                            if (M->p_is_32) {
+                        if (M->h == NULL) 
+                        {
+                            if (M->p_is_32) 
+                            {
                                 (MTp32[k + 1])++ ;
                             }
-                            else {
+                            else 
+                            {
                                 (MTp64[k + 1])++ ;
                             }
                         }
-                        else {
+                        else 
+                        {
                             uint64_t vec = M->j_is_32 ? ((uint32_t *)M->h)[k] : ((uint64_t *)M->h)[k] ;
                             if (M->p_is_32)
                                 (MTp32[vec + 1])++ ;
-                            else {
+                            else 
+                            {
                                 (MTp64[vec + 1])++ ;
                             }
                         }
-
                         nonempty = true ;
                     }
                 }
@@ -278,11 +269,12 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
         }
 
         // GB_cumsum for MT->p
+
         int cumsum_threads = (M->vdim / 2) > 0 ? (M->vdim / 2) : 1 ;
         M->p_is_32 ? GB_cumsum(MTp32, M->p_is_32, M->vdim + 1, NULL, cumsum_threads, Werk) : GB_cumsum(MTp64, M->p_is_32, 
             M->vdim + 1, NULL, cumsum_threads, Werk) ;
 
-        // another iteration over M to determine MT->i and MT->x
+        // another iteration over M to initialize MT->i and MT->x
 
         if (MTp32) {
             memmove(MTp32, MTp32 + 1, (M->vdim + 1) * sizeof(uint32_t)) ;
@@ -297,10 +289,12 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
         MTi64 = M->i_is_32 ? NULL : GB_calloc_memory (centries, sizeof(uint64_t), &allocated) ;
 
         void* MTx = NULL ;
-        if (!MTiso) {
+        if (!MTiso) 
+        {
             MTx = GB_calloc_memory (centries, op->ztype->size, &allocated) ;
         }
-        else {
+        else 
+        {
             MTx = GB_calloc_memory (1, op->ztype->size, &allocated) ;
             memcpy (MTx, MTscalar, MTsize) ;
         }
@@ -315,19 +309,21 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
             for (GrB_Index k = 0 ; k < M->nvec ; k++)
             {
                 GrB_Index j = Mh32 ? GBH (Mh32, k) : GBH (Mh64, k) ;
-                // operate on column A(:,j)
+
                 int64_t pA_start = Mp32 ? GBP (Mp32, k, vlen) : GBP(Mp64, k, vlen) ;
-                int64_t pA_end   = Mp32 ? GBP (Mp32, k+1, vlen) : GBP(Mp64, k+1, vlen) ;
+                int64_t pA_end = Mp32 ? GBP (Mp32, k+1, vlen) : GBP(Mp64, k+1, vlen) ;
                 GrB_Index pos = M->p_is_32 ? MTp32[k] : MTp64[k] ;
                 for (GrB_Index p = pA_start ; p < pA_end ; p++)
                 {
                     if (!GBB (M->b, p)) continue ;
-                    // entry A(i,j) with row index i and value aij
+
                     int64_t i = Mi32 ? GBI (Mi32, p, vlen) : GBI (Mi64, p, vlen) ;
                     GrB_Index Mrow = M->is_csc ? i : j ; GrB_Index Mcol = M->is_csc ? j : i ;
 
-                    // extract elements from A and B, initialize offset of MTi, get result of op, 
-                    // place it in MTx
+                    // extract elements from A and B, 
+                    // initialize offset in MTi and MTx,
+                    // get result of op, place it in MTx
+
                     if (Mask_struct || (M->iso ? ((int8_t*)M->x)[0] : ((int8_t*)M->x)[p])) {
 
                         GrB_Index arow = A_transpose ? (Mcol / bncols) : (Mrow / bnrows);
@@ -340,16 +336,30 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
                         if (!code) {
                             continue;
                         }
+                        if (!MTiso)
                         cast_A (a_elem, A->x + offset * A->type->size, A->type->size) ;
 
                         code = GB_lookup_xoffset (&offset, B, brow, bcol) ;
                         if (!code) {
                             continue;
                         }
+                        if (!MTiso)
                         cast_B (b_elem, B->x + offset * B->type->size, B->type->size) ;
 
-                        if (!MTiso) {
-                            op->binop_function(MTx + op->ztype->size * pos, a_elem, b_elem) ;
+                        if (!MTiso)
+                        {
+                            if (op->binop_function) {
+                                op->binop_function (MTx + op->ztype->size * pos, a_elem, b_elem) ;
+                            }
+                            else {
+                                GrB_Index ix, iy, jx, jy ;
+                                ix = A_transpose ? acol : arow ;
+                                iy = A_transpose ? arow : acol ;
+                                jx = B_transpose ? bcol : brow ;
+                                jy = B_transpose ? brow : bcol ;
+                                op->idxbinop_function (MTx + op->ztype->size * pos, a_elem, ix, iy,
+                                    b_elem, jx, jy, op->theta) ;
+                            }
                         }
 
                         if (M->i_is_32) { MTi32[pos] = i ; } else { MTi64[pos] = i ; }
@@ -369,14 +379,13 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
         GB_free_memory (&MT->i, MT->i_size) ;
         GB_free_memory (&MT->x, MT->x_size) ;
 
-
         MT->p = M->p_is_32 ? (void*)MTp32 : (void*)MTp64 ;
         MT->i = M->i_is_32 ? (void*)MTi32 : (void*)MTi64 ;
         MT->x = MTx ;
-        //MT->iso = MTiso ;
 
         MT->p_size = (M->p_is_32 ? sizeof(int32_t) : sizeof(int64_t)) * (M->vdim + 2) ;
-        MT->i_size = centries ? ((M->i_is_32 ? sizeof(int32_t) : sizeof(int64_t)) * centries) : (M->i_is_32 ? sizeof(int32_t) : sizeof(int64_t)) ;
+        MT->i_size = centries ? ((M->i_is_32 ? sizeof(int32_t) : sizeof(int64_t)) * centries) : 
+        (M->i_is_32 ? sizeof(int32_t) : sizeof(int64_t)) ;
         MT->x_size = centries? op->ztype->size * centries : op->ztype->size ;
         MT->magic = GB_MAGIC ;
         MT->nvals = centries ;
@@ -384,7 +393,7 @@ GrB_Info GB_kron                    // C<M> = accum (C, kron(A,B))
 
         GB_MATRIX_WAIT(MT) ;
 
-        // GB_hyper_prune and transpose and cast if needed
+        // transpose and convert to hyper if needed
 
         if (MT->is_csc != C->is_csc) 
         {
