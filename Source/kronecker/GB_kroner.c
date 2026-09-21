@@ -131,7 +131,7 @@ static GrB_Info GB_kroner_generic
     GB_Cp_DECLARE (Cp, ) ; GB_Cp_PTR (Cp, C) ;
     const int64_t cnvec = C->nvec ;
     const int64_t cvlen = C->vlen ;
-    const int64_t cnz   = C->nvals ;
+    const int64_t cnz   = GB_nnz(C) ;
 
     #define GB_NO_MASK      (Mask == NULL)
     #define GB_MASK_STRUCT  Mask_struct
